@@ -1,0 +1,9 @@
+# Ignore everything
+*
+
+# Except the metaweb folder
+!metaweb/
+!metaweb/**
+
+# Except R script files
+!*.R
