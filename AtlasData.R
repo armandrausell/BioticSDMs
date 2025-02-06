@@ -1,7 +1,6 @@
 
 library(igraph)
 #library(blockmodels)
-library(NetIndices)
 library(ggplot2)
 library(RColorBrewer)
 library(readr)
@@ -41,6 +40,8 @@ Rept <- read_delim("Atlas_data/DB_Reptiles_IP.txt",
 spain_vector <- vect("Atlas_data/UTMgrid_IberianPeninsula/UTM_GRID.shp")
 spain_vector_latlong <- project(spain_vector, "+proj=longlat +datum=WGS84")
 
+library(data.table)
+
 # Merging species data and the grid to obtain a vector with data inside
 Amph_spain <- merge(spain_vector, Amph, 
                     by.x = "UTMCODE", by.y = "UTMCODE") # Amphibians
@@ -50,17 +51,30 @@ Bird_spain <- merge(spain_vector, Bird,
                     by.x = "UTMCODE", by.y = "UTMCODE") # Birds
 Mamm_spain <- merge(spain_vector, Mamm, 
                     by.x = "UTMCODE", by.y = "UTMCODE") # Mammals
-Species_spain <- merge(Amph_spain, Rept_spain, 
-                       by.x = "UTMCODE", by.y = "UTMCODE") %>%
-  merge(Bird_spain, 
-        by.x = "UTMCODE", by.y = "UTMCODE") %>%
-  merge(Mamm_spain, 
-        by.x = "UTMCODE", by.y = "UTMCODE")
+
+# Merging all groups step-by-step using Reduce() to avoid memory issues
+Species_spain <- Reduce(function(x, y) merge(x, y, by = "UTMCODE", all = TRUE),
+                        list(Amph_spain, Rept_spain, Bird_spain, Mamm_spain))
+
+# Replace dots with spaces in the names_sps vector
+names_sps <- gsub("\\.", " ", names_sps)
+
+names(Species_spain)<-names_sps
+# Check the updated vector
+print(names_sps)
+
+# Fix column names by replacing dots with spaces (for SpatVector)
+names(names_sps) <- gsub("\\.", " ", names(names_sps))
+
+# Check if names are now correct
+print(names(Species_spain))
+
+# Confirm that Species_spain is still a SpatVector
+print(Species_spain)
 
 Species_spain_df <- as.data.frame(Species_spain) # Transform the vector into a df
 
-plot(Species_spain) # Chech the UTM-based grid
-
+#Get shapefile for spain
 spain <- geodata::world(path = "countries.shp") 
 spain <- spain[spain$GID_0 %in% c("ESP","PRT"), ]
 spain <- project(spain, crs(Species_spain))
@@ -98,19 +112,35 @@ plot(spain_cropped, add=TRUE, border="black", lwd=2)  # Overlay vector
 writeRaster(spain_raster, "spain_rasterUTM.tif", overwrite=TRUE)
 
 ############ PLOT POINTS TO RASTER ##############
-species_to_plot <- names(Species_spain[,2]) # Choose from 2 to 293
-plot(spain_cropped, col = "white", border = "black", axes = F)
-sp.points <- Species_spain[Species_spain[[species_to_plot]] == 1, ]
-#plot(sp.points, col = "blue", add=T)
 
-# Rasterize the points (assign 1 to cells where points exist)
-points_raster <- rasterize(sp.points, spain_raster, field=1)
-
-# Assign 1 where points are located
-spain_raster[!is.na(points_raster)] <- 1
-
-# Plot the output to verify
-plot(spain_raster, col=c("gray", "red"), main="Vector Points Set to 1")
-#plot(sp.points, add=TRUE, col="blue", pch=20)  # Overlay points
-
-
+plot_species <- function(species_name) {
+  # Load necessary library
+  library(terra)
+  
+  # Select species to plot
+  species_to_plot <- species_name
+  
+  # Filter the points for the selected species
+  sp.points <- Species_spain[Species_spain[[species_to_plot]] == 1, ]
+  
+  # Check if there are points for this species
+  if (nrow(sp.points) == 0) {
+    stop(paste("No occurrence data for", species_to_plot))
+  }
+  
+  # Plot base map
+  plot(spain_cropped, col = "white", border = "black", axes = FALSE, main = species_to_plot)
+  
+  # Rasterize the species' occurrence points
+  points_raster <- rasterize(sp.points, spain_raster, field=1)
+  
+  # Assign 1 where points are located
+  spain_raster[!is.na(points_raster)] <- 1
+  
+  # Plot raster with species occurrences highlighted
+  plot(spain_raster, col=c("gray", "red"), main=paste("Species:", species_to_plot))
+  
+  # Add occurrence points to the plot
+  #plot(sp.points, col = "blue", pch = 20, add = TRUE)
+}
+plot_species("Sus.scrofa")
