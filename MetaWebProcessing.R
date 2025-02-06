@@ -26,5 +26,15 @@ binary_matrix_df <- as.data.frame(binary_matrix)
 # View the binary matrix
 print(binary_matrix_df)
 
-# Optionally, write to CSV
+# Write to CSV
 write.csv(binary_matrix_df, "binary_interaction_matrix.csv", row.names = TRUE)
+
+# Compute the shared predation matrix
+shared_predation_matrix <- binary_matrix %*% t(binary_matrix)
+
+# Convert to dataframe for better readability
+shared_predation_df <- as.data.frame(shared_predation_matrix)
+
+# Display the shared predation matrix
+print(shared_predation_df)
+

@@ -7,3 +7,4 @@
 
 # Except R script files
 !*.R
+.Rproj.user
