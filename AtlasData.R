@@ -43,36 +43,17 @@ spain_vector_latlong <- project(spain_vector, "+proj=longlat +datum=WGS84")
 library(data.table)
 
 # Merging species data and the grid to obtain a vector with data inside
-Amph_spain <- merge(spain_vector, Amph, 
-                    by.x = "UTMCODE", by.y = "UTMCODE") # Amphibians
-Rept_spain <- merge(spain_vector, Rept, 
-                    by.x = "UTMCODE", by.y = "UTMCODE") # Reptiles
-Bird_spain <- merge(spain_vector, Bird, 
-                    by.x = "UTMCODE", by.y = "UTMCODE") # Birds
-Mamm_spain <- merge(spain_vector, Mamm, 
-                    by.x = "UTMCODE", by.y = "UTMCODE") # Mammals
+Amph_spain <- merge(spain_vector, Amph, by.x = "UTMCODE", by.y = "UTMCODE") # Amphibians
+Rept_spain <- merge(spain_vector, Rept, by.x = "UTMCODE", by.y = "UTMCODE") # Reptiles
+Bird_spain <- merge(spain_vector, Bird, by.x = "UTMCODE", by.y = "UTMCODE") # Birds
+Mamm_spain <- merge(spain_vector, Mamm, by.x = "UTMCODE", by.y = "UTMCODE") # Mammals
 
 # Merging all groups step-by-step using Reduce() to avoid memory issues
 Species_spain <- Reduce(function(x, y) merge(x, y, by = "UTMCODE", all = TRUE),
                         list(Amph_spain, Rept_spain, Bird_spain, Mamm_spain))
 
-# Replace dots with spaces in the names_sps vector
-names_sps <- gsub("\\.", " ", names_sps)
-
-names(Species_spain)<-names_sps
-# Check the updated vector
-print(names_sps)
-
-# Fix column names by replacing dots with spaces (for SpatVector)
-names(names_sps) <- gsub("\\.", " ", names(names_sps))
-
-# Check if names are now correct
-print(names(Species_spain))
-
-# Confirm that Species_spain is still a SpatVector
-print(Species_spain)
-
 Species_spain_df <- as.data.frame(Species_spain) # Transform the vector into a df
+
 
 #Get shapefile for spain
 spain <- geodata::world(path = "countries.shp") 
@@ -117,8 +98,21 @@ plot_species <- function(species_name) {
   # Load necessary library
   library(terra)
   
-  # Select species to plot
-  species_to_plot <- species_name
+  # Get all species names from the dataset
+  existing_names <- names(Species_spain)
+  
+  # Generate possible name formats "." or " ". 
+  species_to_plot_dot <- gsub(" ", ".", species_name)  # Replace space with dot
+  species_to_plot_space <- gsub("\\.", " ", species_name)  # Replace dot with space
+  
+  # Find the correct species name
+  if (species_to_plot_dot %in% existing_names) {
+    species_to_plot <- species_to_plot_dot
+  } else if (species_to_plot_space %in% existing_names) {
+    species_to_plot <- species_to_plot_space
+  } else {
+    stop(paste("Species not found in the dataset:", species_name))
+  }
   
   # Filter the points for the selected species
   sp.points <- Species_spain[Species_spain[[species_to_plot]] == 1, ]
@@ -143,4 +137,4 @@ plot_species <- function(species_name) {
   # Add occurrence points to the plot
   #plot(sp.points, col = "blue", pch = 20, add = TRUE)
 }
-plot_species("Sus.scrofa")
+plot_species("Lissotriton boscai")
