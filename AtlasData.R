@@ -134,7 +134,8 @@ plot_species <- function(species_name) {
   # Plot raster with species occurrences highlighted
   plot(spain_raster, col=c("gray", "red"), main=paste("Species:", species_to_plot))
   
+  return(spain_raster)
   # Add occurrence points to the plot
   #plot(sp.points, col = "blue", pch = 20, add = TRUE)
 }
-plot_species("Lissotriton boscai")
+sp<-plot_species("Canis lupus")
