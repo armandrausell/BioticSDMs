@@ -38,3 +38,49 @@ shared_predation_df <- as.data.frame(shared_predation_matrix)
 # Display the shared predation matrix
 print(shared_predation_df)
 
+# Get predator species names
+predators <- rownames(shared_predation_df)
+
+# Get the total number of prey each predator eats (diagonal values)
+total_prey <- diag(as.matrix(shared_predation_df))
+total_prey_df <- data.frame(Predator = predators, TotalPrey = total_prey)
+
+# Create an empty dataframe to store interactions
+interaction_df <- data.frame(Predator_A = character(), 
+                             Predator_B = character(), 
+                             SharedPreyCount = numeric(), 
+                             Proportion_A_Shares = numeric(), 
+                             Proportion_B_Shares = numeric(), 
+                             TotalPrey_A = numeric(), 
+                             TotalPrey_B = numeric(), 
+                             stringsAsFactors = FALSE)
+
+# Loop through unique predator pairs (takes around 1-2 minutes)
+for (i in 1:(length(predators) - 1)) {
+  for (j in (i + 1):length(predators)) {
+    predator_A <- predators[i]
+    predator_B <- predators[j]
+    
+    shared_prey_count <- shared_predation_df[predator_A, predator_B]
+    
+    if (shared_prey_count > 0) {  # Only keep pairs that share at least one prey
+      total_prey_A <- total_prey[i]
+      total_prey_B <- total_prey[j]
+      
+      proportion_A_shares <- shared_prey_count / total_prey_A
+      proportion_B_shares <- shared_prey_count / total_prey_B
+      
+      interaction_df <- rbind(interaction_df, 
+                              data.frame(Predator_A = predator_A, 
+                                         Predator_B = predator_B, 
+                                         SharedPreyCount = shared_prey_count, 
+                                         Proportion_A_Shares = proportion_A_shares, 
+                                         Proportion_B_Shares = proportion_B_shares, 
+                                         TotalPrey_A = total_prey_A, 
+                                         TotalPrey_B = total_prey_B))
+    }
+  }
+}
+
+# View the dataframe
+print(interaction_df)
