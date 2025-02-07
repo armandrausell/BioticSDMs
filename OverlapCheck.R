@@ -165,6 +165,30 @@ Competition_spain_df <- as.data.frame(Competition_spain_df)
 
 write.csv(Competition_spain_df, "Competition_data_spain.csv", row.names = FALSE)
 
+Competition_spain_df$RealizedDietOverlapA<-
+  Competition_spain_df$Shared_Co_Occurring_Prey/Competition_spain_df$TotalPrey_A
+
+Competition_spain_df$RealizedDietOverlapB<-
+  Competition_spain_df$Shared_Co_Occurring_Prey/Competition_spain_df$TotalPrey_B
 
 
+#Calculate alpha based on species generalism, a parameter to relate Realized and potential overlaps
+Competition_spain_df <- Competition_spain_df %>%
+  mutate(alphaA = (TotalPrey_A - min(TotalPrey_A, na.rm = TRUE)) /
+           (max(TotalPrey_A, na.rm = TRUE) - min(TotalPrey_A, na.rm = TRUE)))
+
+Competition_spain_df <- Competition_spain_df %>%
+  mutate(alphaB = (TotalPrey_B - min(TotalPrey_B, na.rm = TRUE)) /
+           (max(TotalPrey_B, na.rm = TRUE) - min(TotalPrey_B, na.rm = TRUE)))
+
+
+# Check results
+print(head(interaction_df_spain))
+
+#Calculate the amount of pressure competitors excert over the others
+Competition_spain_df$PressureBtoA<-Competition_spain_df$alphaA*Competition_spain_df$Proportion_A_Shares+
+  (1-Competition_spain_df$alphaA)*Competition_spain_df$RealizedDietOverlapA
+
+Competition_spain_df$PressureAtoB<-Competition_spain_df$alphaB*Competition_spain_df$Proportion_B_Shares+
+  (1-Competition_spain_df$alphaB)*Competition_spain_df$RealizedDietOverlapB
 
