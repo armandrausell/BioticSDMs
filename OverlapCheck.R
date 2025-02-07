@@ -19,15 +19,22 @@ interaction_df_spain <- interaction_df %>%
 library(terra)
 library(dplyr)
 
-#Define function to plot raster of each species when called
-plot_species <- function(species_name) {
+# Create a cache to store raster layers
+species_raster_cache <- list()
+
+get.sp.raster <- function(species_name) {
   # Load necessary library
   library(terra)
+  
+  # Check if species raster is already cached
+  if (species_name %in% names(species_raster_cache)) {
+    return(species_raster_cache[[species_name]])  # Return cached raster
+  }
   
   # Get all species names from the dataset
   existing_names <- names(Species_spain)
   
-  # Generate possible name formats "." or " ". 
+  # Generate possible name formats "." or " " 
   species_to_plot_dot <- gsub(" ", ".", species_name)  # Replace space with dot
   species_to_plot_space <- gsub("\\.", " ", species_name)  # Replace dot with space
   
@@ -53,15 +60,19 @@ plot_species <- function(species_name) {
   
   # Assign 1 where points are located
   spain_raster[!is.na(points_raster)] <- 1
+  
+  # Store the computed raster in cache
+  species_raster_cache[[species_name]] <<- spain_raster
+  print(paste("Cached raster for:", species_name))
+  
   return(spain_raster)
-  }
+}
 
-
-# Function to check overlap
+# Function to check overlap between two species
 check_overlap <- function(species_A, species_B) {
   # Get rasters for both species
-  raster_A <- plot_species(species_A) #plot_species is created in AtlasData.R
-  raster_B <- plot_species(species_B)
+  raster_A <- get.sp.raster(species_A) #plot_species is created in AtlasData.R
+  raster_B <- get.sp.raster(species_B)
   
   # Sum both rasters (cells with 2 indicate overlap)
   combined_raster <- raster_A + raster_B
@@ -90,4 +101,70 @@ interaction_df_spain[c("Overlap", "Overlap_Proportion")] <- t(apply(
 
 # Save to CSV if needed
 write.csv(interaction_df_spain, "Complete_overlap_spain.csv", row.names = FALSE)
+
+# Remove unlikely interactions (known herbivores, insectivores...)
+
+# Filter out rows where either TotalPrey_A or TotalPrey_B is equal to 1
+interaction_df_spain_clean <- interaction_df_spain %>%
+  filter(!(TotalPrey_A <= 3 | TotalPrey_B <= 3))
+
+# Save if needed
+write.csv(interaction_df_spain_clean, "interaction_df_spain_clean.csv", row.names = FALSE)
+
+####### REALIZED COMPETITION ############
+
+# Function to get the names of the preys from binary_matrix_df while filtering names_sps
+get_prey_species <- function(predator) {
+  prey <- colnames(binary_matrix_df)[binary_matrix_df[predator, ] == 1]
+  
+  # Keep only prey species that exist in names_sps
+  prey <- prey[prey %in% names_sps]
+  
+  return(prey)
+}
+
+
+# Function to check if a predator and prey co-occur using get.sp.raster()
+get_co_occurring_prey <- function(predator, prey_list) {
+  co_occurring_prey <- c()
+  
+  predator_raster <- get.sp.raster(predator)  # Get predator's raster
+  
+  for (prey in prey_list) {
+    prey_raster <- get.sp.raster(prey)  # Get prey's raster
+
+    combined_raster <- predator_raster + prey_raster
+    if (sum(values(combined_raster) == 2, na.rm = TRUE) > 0) {
+      co_occurring_prey <- c(co_occurring_prey, prey)
+    }
+  }
+  
+  return(co_occurring_prey)
+}
+
+library(dplyr)
+library(purrr)
+
+Competition_spain_df <- interaction_df_spain_clean %>%
+  mutate(
+    # Get prey species for all Predator_A and Predator_B at once
+    Prey_A = map(Predator_A, ~ get_prey_species(.x)),
+    Prey_B = map(Predator_B, ~ get_prey_species(.x)),
+    
+    # Get co-occurring prey for all Predator_A and Predator_B at once
+    Co_Occurring_A = map2(Predator_A, Prey_A, ~ get_co_occurring_prey(.x, .y)),
+    Co_Occurring_B = map2(Predator_B, Prey_B, ~ get_co_occurring_prey(.x, .y)),
+    
+    # Count shared co-occurring prey
+    Shared_Co_Occurring_Prey = map2_int(Co_Occurring_A, Co_Occurring_B, ~ length(intersect(.x, .y)))
+  ) %>%
+  dplyr::select(-Prey_A, -Prey_B, -Co_Occurring_A, -Co_Occurring_B)  # Remove temp columns
+
+# Convert back to dataframe
+Competition_spain_df <- as.data.frame(Competition_spain_df)
+
+write.csv(Competition_spain_df, "Competition_data_spain.csv", row.names = FALSE)
+
+
+
 
