@@ -181,14 +181,15 @@ Competition_spain_df <- Competition_spain_df %>%
   mutate(alphaB = (TotalPrey_B - min(TotalPrey_B, na.rm = TRUE)) /
            (max(TotalPrey_B, na.rm = TRUE) - min(TotalPrey_B, na.rm = TRUE)))
 
-
-# Check results
-print(head(interaction_df_spain))
-
-#Calculate the amount of pressure competitors excert over the others
+#Calculate the amount of pressure competitors exert over the others
 Competition_spain_df$PressureBtoA<-Competition_spain_df$alphaA*Competition_spain_df$Proportion_A_Shares+
   (1-Competition_spain_df$alphaA)*Competition_spain_df$RealizedDietOverlapA
 
 Competition_spain_df$PressureAtoB<-Competition_spain_df$alphaB*Competition_spain_df$Proportion_B_Shares+
   (1-Competition_spain_df$alphaB)*Competition_spain_df$RealizedDietOverlapB
+
+Competition_spain_df1<-Competition_spain_df %>%
+  mutate(
+    DeltaPressure=abs(PressureBtoA-PressureAtoB)
+  )
 
