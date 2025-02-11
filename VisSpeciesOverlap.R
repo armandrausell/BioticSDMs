@@ -9,5 +9,5 @@ VisOverlap <- function(species_A, species_B) {
   plot(combined_raster)
 }
 
-VisOverlap("Ursus arctos", "Pyrrhocorax graculus")
+VisOverlap("Ursus arctos", "Canis lupus")
 
