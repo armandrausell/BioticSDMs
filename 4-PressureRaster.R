@@ -1,6 +1,5 @@
 
-library(dplyr)
-
+library(terra)
 library(dplyr)
 
 # Define function to get top competitors for any species
@@ -25,9 +24,6 @@ get_top_competitors <- function(species_name, n = 5)  { #amount of species to ge
 
 # Example usage for Lynx pardinus
 result <- get_top_competitors("Lynx pardinus", n = 5)
-
-library(terra)
-library(dplyr)
 
 # Function to compute the total competitive pressure raster for a given species
 compute_competitor_pressure <- function(species_name, n = 10) {
@@ -56,20 +52,18 @@ compute_competitor_pressure <- function(species_name, n = 10) {
   
   # Step 4: Plot the final raster
   plot(total_pressure_raster, main = paste("Total Competitive Pressure on", species_name),
-       col = terrain.colors(100))
+       col = rev(terrain.colors(100)))
   
   return(total_pressure_raster)
 }
 
-# Example: Compute and plot the competitive pressure on Lynx pardinus
-sp<-"Coronella girondica"
+# Example: Compute and plot the competitive pressure on any species
+sp<-"Coronella girondica" #Species name
 pressure_raster <- compute_competitor_pressure(paste0(sp), n = 5)
 r<-get.sp.raster(sp)
 plot(r,main = paste("Distribution of", sp))
 
 #############################
-library(terra)
-library(dplyr)
 
 # Function to assess Spearman correlation between competitive pressure and actual distribution
 assess_correlation <- function(species_name, n = 5) {
@@ -139,3 +133,103 @@ print(Sp.correlation)
 Sp.correlation$R2 <- round(Sp.correlation$Spearman_Correlation^2, 3)
 
 
+library(dplyr)
+library(terra)
+
+# Function to assess correlation for a species while varying competitor numbers
+evaluate_competitor_correlation <- function(species_name, max_competitors = 15) {
+  
+  # Get species richness map (same for all competitor numbers)
+  richness_map <- compute_species_richness(unique_species)
+  
+  # Get actual species distribution
+  actual_distribution <- get.sp.raster(species_name)
+  
+  # Initialize results dataframe
+  correlation_results <- data.frame(
+    Species = character(),
+    Num_Competitors = integer(),
+    Correlation_Actual = numeric(),
+    Correlation_Richness = numeric()
+  )
+  
+  # Loop through 1 to max_competitors
+  for (n in 1:max_competitors) {
+    cat("Computing for", species_name, "with", n, "competitors...\n")
+    
+    # Compute competition pressure map with n competitors
+    pressure_map <- compute_competitor_pressure(species_name, n)
+    
+    # Extract values while removing NA
+    pressure_values <- values(pressure_map)
+    actual_values <- values(actual_distribution)
+    richness_values <- values(richness_map)
+    
+    # Remove NA values from all three datasets
+    valid_indices <- !is.na(pressure_values) & !is.na(actual_values) & !is.na(richness_values)
+    pressure_values <- pressure_values[valid_indices]
+    actual_values <- actual_values[valid_indices]
+    richness_values <- richness_values[valid_indices]
+    
+    # Compute Spearman correlation with actual species distribution
+    correlation_actual <- cor(pressure_values, actual_values, method = "spearman")
+    
+    # Compute Spearman correlation with species richness map
+    correlation_richness <- cor(pressure_values, richness_values, method = "spearman")
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      Species = species_name,
+      Num_Competitors = n,
+      Correlation_Actual = correlation_actual,
+      Correlation_Richness = correlation_richness
+    ))
+  }
+  
+  return(correlation_results)
+}
+
+# Run the evaluation for all unique species
+all_correlation_results <- data.frame()
+for (species in unique_species) {
+  cat("Evaluating:", species, "\n")
+  species_results <- evaluate_competitor_correlation(species, max_competitors = 15)
+  all_correlation_results <- rbind(all_correlation_results, species_results)
+}
+
+all_correlation_results$difference<-all_correlation_results$Correlation_Actual-all_correlation_results$Correlation_Richness
+
+# Select the best number of competitor count for each species
+Opt_comptetitor_per_species <- all_correlation_results %>%
+  group_by(Species) %>%
+  filter(abs(Correlation_Actual) == max(abs(Correlation_Actual))) %>%
+  mutate(Correlation_Actual = abs(Correlation_Actual) * sign(Correlation_Actual)) %>%  # Preserve sign
+  dplyr::select(Species, Num_Competitors, Correlation_Actual, Correlation_Richness) %>%
+  arrange(desc(Correlation_Actual))
+
+library(ggplot2)
+library(ggrepel)  # For better label placement
+
+# Create scatter plot with a single combined legend for size and color
+library(ggplot2)
+library(ggrepel)
+
+# Ensure both size and color have the same scale and breaks
+ggplot(Opt_comptetitor_per_species, aes(x = Correlation_Actual, y = Correlation_Richness, label = Species)) +
+  geom_point(alpha = 0.8, aes(size = Num_Competitors, color = Num_Competitors)) +  # Maintain point visibility
+  scale_color_continuous(limits=c(1, 15), breaks=seq(1, 15, by=2),low = "#f7b9b5", high = "darkred") +
+  scale_size_continuous(name = "Number of Competitors", breaks = seq(1, 15, by = 2), limits = c(1, 15)) +  
+  #scale_color_viridis_c(name = "Number of Competitors", option = "plasma") +  # Using Viridis for better color mapping
+  geom_vline(xintercept = 0, linetype="dashed")+
+  geom_text_repel(aes(label = Species), size = 2, color = "black") +  # Keep text readable
+  labs(
+    title = "Relationship Between competitive pressure with Species Richness and actual dist",
+    x = "Correlation with Actual Distribution",
+    y = "Correlation with Species Richness"
+  ) +
+  guides(
+    size = guide_legend(title = "Number of Competitors"),
+    color = guide_legend(title = "Number of Competitors")  # Force merging
+  ) +
+  theme_minimal() +  
+  theme(legend.position = "right")
