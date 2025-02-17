@@ -150,7 +150,8 @@ evaluate_competitor_correlation <- function(species_name, max_competitors = 15) 
     Species = character(),
     Num_Competitors = integer(),
     Correlation_Actual = numeric(),
-    Correlation_Richness = numeric()
+    Correlation_Richness = numeric(),
+    Corr_Act_Biserial = numeric()
   )
   
   # Loop through 1 to max_competitors
@@ -177,12 +178,19 @@ evaluate_competitor_correlation <- function(species_name, max_competitors = 15) 
     # Compute Spearman correlation with species richness map
     correlation_richness <- cor(pressure_values, richness_values, method = "spearman")
     
+    # Compute biserial correlation, similar to Pearson but for binary/continuous comparisons
+    # Remove NA values
+   
+    # Compute Point Biserial Correlation
+    r_pb <- biserial(pressure_values, actual_values)
+    
     # Store results
     correlation_results <- rbind(correlation_results, data.frame(
       Species = species_name,
       Num_Competitors = n,
       Correlation_Actual = correlation_actual,
-      Correlation_Richness = correlation_richness
+      Correlation_Richness = correlation_richness,
+      Corr_Act_Biserial = r_pb
     ))
   }
   
@@ -202,10 +210,10 @@ all_correlation_results$difference<-all_correlation_results$Correlation_Actual-a
 # Select the best number of competitor count for each species
 Opt_comptetitor_per_species <- all_correlation_results %>%
   group_by(Species) %>%
-  filter(abs(Correlation_Actual) == max(abs(Correlation_Actual))) %>%
-  mutate(Correlation_Actual = abs(Correlation_Actual) * sign(Correlation_Actual)) %>%  # Preserve sign
-  dplyr::select(Species, Num_Competitors, Correlation_Actual, Correlation_Richness) %>%
-  arrange(desc(Correlation_Actual))
+  filter(abs(Corr_Act_Biserial) == max(abs(Corr_Act_Biserial))) %>%
+  mutate(Corr_Act_Biserial = abs(Corr_Act_Biserial) * sign(Corr_Act_Biserial)) %>%  # Preserve sign
+  dplyr::select(Species, Num_Competitors, Corr_Act_Biserial, Correlation_Richness) %>%
+  arrange(desc(Corr_Act_Biserial))
 
 library(ggplot2)
 library(ggrepel)  # For better label placement
@@ -215,7 +223,7 @@ library(ggplot2)
 library(ggrepel)
 
 # Ensure both size and color have the same scale and breaks
-ggplot(Opt_comptetitor_per_species, aes(x = Correlation_Actual, y = Correlation_Richness, label = Species)) +
+ggplot(Opt_comptetitor_per_species, aes(x = Corr_Act_Biserial, y = Correlation_Richness, label = Species)) +
   geom_point(alpha = 0.8, aes(size = Num_Competitors, color = Num_Competitors)) +  # Maintain point visibility
   scale_color_continuous(limits=c(1, 15), breaks=seq(1, 15, by=2),low = "#f7b9b5", high = "darkred") +
   scale_size_continuous(name = "Number of Competitors", breaks = seq(1, 15, by = 2), limits = c(1, 15)) +  
