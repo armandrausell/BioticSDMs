@@ -1,6 +1,7 @@
 
 library(terra)
 library(dplyr)
+library(psych)
 
 # Define function to get top competitors for any species
 get_top_competitors <- function(species_name, n = 5)  { #amount of species to get
@@ -132,6 +133,36 @@ print(Sp.correlation)
 # Compute R² and round to 2 decimal places
 Sp.correlation$R2 <- round(Sp.correlation$Spearman_Correlation^2, 3)
 
+# Function to compute species richness map
+compute_species_richness <- function(species_list) {
+  # Initialize an empty raster with the same extent/resolution as the first species raster
+  richness_raster <- spain_raster
+  values(richness_raster) <- 0  # Start with all values as 0
+  
+  # Loop through each species and add its presence to the richness raster
+  for (species in species_list) {
+    cat("Adding", species, "to species richness map...\n")
+    
+    # Get species raster
+    species_raster <- tryCatch(
+      get.sp.raster(species),
+      error = function(e) {
+        cat("Skipping", species, "- no valid raster found.\n")
+        return(NULL)
+      }
+    )
+    
+    # If the raster exists, add it to the cumulative species richness map
+    if (!is.null(species_raster)) {
+      richness_raster <- richness_raster + species_raster
+    }
+  }
+  
+  # Plot the species richness map
+  plot(richness_raster, main = "Species Richness Map", col = terrain.colors(100))
+  
+  return(richness_raster)
+}
 
 library(dplyr)
 library(terra)
@@ -179,9 +210,6 @@ evaluate_competitor_correlation <- function(species_name, max_competitors = 15) 
     correlation_richness <- cor(pressure_values, richness_values, method = "spearman")
     
     # Compute biserial correlation, similar to Pearson but for binary/continuous comparisons
-    # Remove NA values
-   
-    # Compute Point Biserial Correlation
     r_pb <- biserial(pressure_values, actual_values)
     
     # Store results
@@ -197,12 +225,24 @@ evaluate_competitor_correlation <- function(species_name, max_competitors = 15) 
   return(correlation_results)
 }
 
-# Run the evaluation for all unique species
-all_correlation_results <- data.frame()
-for (species in unique_species) {
-  cat("Evaluating:", species, "\n")
-  species_results <- evaluate_competitor_correlation(species, max_competitors = 15)
-  all_correlation_results <- rbind(all_correlation_results, species_results)
+
+
+# Check if the CSV file exists
+if (file.exists("Correlation_distribution_w_competition.csv")) {
+  cat("CSV file found. Loading data...\n")
+  all_correlation_results <- read.csv("Correlation_distribution_w_competition.csv")  # Load the existing data
+} else {
+  cat("CSV file not found. Running evaluation...\n")
+  # Compute correlation results if the file does not exist
+  all_correlation_results <- data.frame()
+  for (species in unique_species) {
+    cat("Evaluating:", species, "\n")
+    species_results <- evaluate_competitor_correlation(species, max_competitors = 15)
+    all_correlation_results <- rbind(all_correlation_results, species_results)
+  }
+  
+  # Save the computed data to CSV
+  write.csv(all_correlation_results, "Corr_distribution_w_competition.csv", row.names = FALSE)
 }
 
 all_correlation_results$difference<-all_correlation_results$Correlation_Actual-all_correlation_results$Correlation_Richness
@@ -217,10 +257,6 @@ Opt_comptetitor_per_species <- all_correlation_results %>%
 
 library(ggplot2)
 library(ggrepel)  # For better label placement
-
-# Create scatter plot with a single combined legend for size and color
-library(ggplot2)
-library(ggrepel)
 
 # Ensure both size and color have the same scale and breaks
 ggplot(Opt_comptetitor_per_species, aes(x = Corr_Act_Biserial, y = Correlation_Richness, label = Species)) +
