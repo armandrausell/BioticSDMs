@@ -17,10 +17,10 @@ interaction_df_spain <- interaction_df %>%
   filter(Predator_A %in% names_sps & Predator_B %in% names_sps)
 
 library(terra)
-library(dplyr)
-
+library(FAMEFMR)
 # Create a cache to store raster layers
 species_raster_cache <- list()
+
 
 get.sp.raster <- function(species_name) {
   # Load necessary library
@@ -68,6 +68,17 @@ get.sp.raster <- function(species_name) {
   return(spain_raster)
 }
 
+#saveSpatRasterList(species_raster_cache,
+ #                  filePath = "Species_raster_cache.qs") #Saving cache
+
+if (file.exists("Species_raster_cache.qs")) {
+  species_raster_cache <- readSpatRasterList("Species_raster_cache.qs")  # Load if file exists
+  print("Loaded species_raster_cache from file.")
+} else {
+  print("File does not exist. Skipping load.")
+}
+names_species_cache<-names(species_raster_cache)
+
 # Function to check overlap between two species
 check_overlap <- function(species_A, species_B) {
   # Get rasters for both species
@@ -92,18 +103,29 @@ check_overlap <- function(species_A, species_B) {
 
 interaction_df_spain <- as.data.frame(interaction_df_spain)
 
-interaction_df_spain[c("Overlap", "Overlap_Proportion")] <- t(apply(
-  interaction_df_spain, 1, function(row) {
-    result <- check_overlap(row["Predator_A"], row["Predator_B"])
-    return(c(result$overlap, result$proportion))
-  }
-))
-
-# Save to CSV if needed
-write.csv(interaction_df_spain, "Complete_overlap_spain.csv", row.names = FALSE)
+# Check if the CSV file exists
+if (file.exists("Complete_overlap_spain.csv")) {
+  
+  cat("CSV file found. Loading data...\n")
+  interaction_df_spain <- read.csv("Complete_overlap_spain.csv")  # Load the existing data
+  
+} else {
+  
+  cat("CSV file not found. Running overlap computation...\n")
+  
+  # Compute overlap if the file does not exist
+  interaction_df_spain[c("Overlap", "Overlap_Proportion")] <- t(apply(
+    interaction_df_spain, 1, function(row) {
+      result <- check_overlap(row["Predator_A"], row["Predator_B"])
+      return(c(result$overlap, result$proportion))
+    }
+  ))
+  
+  # Save to CSV
+  write.csv(interaction_df_spain, "Complete_overlap_spain.csv", row.names = FALSE)
+}
 
 # Remove unlikely interactions (known herbivores, insectivores...)
-
 # Filter out rows where either TotalPrey_A or TotalPrey_B is less than 3
 interaction_df_spain_clean <- interaction_df_spain %>%
   filter(!(TotalPrey_A <= 3 | TotalPrey_B <= 3))
@@ -145,25 +167,38 @@ get_co_occurring_prey <- function(predator, prey_list) {
 library(dplyr)
 library(purrr)
 
-Competition_spain_df <- interaction_df_spain_clean %>%
-  mutate(
-    # Get prey species for all Predator_A and Predator_B at once
-    Prey_A = map(Predator_A, ~ get_prey_species(.x)),
-    Prey_B = map(Predator_B, ~ get_prey_species(.x)),
-    
-    # Get co-occurring prey for all Predator_A and Predator_B at once
-    Co_Occurring_A = map2(Predator_A, Prey_A, ~ get_co_occurring_prey(.x, .y)),
-    Co_Occurring_B = map2(Predator_B, Prey_B, ~ get_co_occurring_prey(.x, .y)),
-    
-    # Count shared co-occurring prey
-    Shared_Co_Occurring_Prey = map2_int(Co_Occurring_A, Co_Occurring_B, ~ length(intersect(.x, .y)))
-  ) %>%
-  dplyr::select(-Prey_A, -Prey_B, -Co_Occurring_A, -Co_Occurring_B)  # Remove temp columns
-
-# Convert back to dataframe
-Competition_spain_df <- as.data.frame(Competition_spain_df)
-
-write.csv(Competition_spain_df, "Competition_data_spain.csv", row.names = FALSE)
+# Check if the CSV file exists
+if (file.exists("Competition_data_spain.csv")) {
+  
+  cat("CSV file found. Loading data...\n")
+  Competition_spain_df <- read.csv("Competition_data_spain.csv")  # Load the existing data
+  
+} else {
+  
+  cat("CSV file not found. Running computation...\n")
+  
+  # Compute Competition_spain_df if the file does not exist
+  Competition_spain_df <- interaction_df_spain_clean %>%
+    mutate(
+      # Get prey species for all Predator_A and Predator_B at once
+      Prey_A = map(Predator_A, ~ get_prey_species(.x)),
+      Prey_B = map(Predator_B, ~ get_prey_species(.x)),
+      
+      # Get co-occurring prey for all Predator_A and Predator_B at once
+      Co_Occurring_A = map2(Predator_A, Prey_A, ~ get_co_occurring_prey(.x, .y)),
+      Co_Occurring_B = map2(Predator_B, Prey_B, ~ get_co_occurring_prey(.x, .y)),
+      
+      # Count shared co-occurring prey
+      Shared_Co_Occurring_Prey = map2_int(Co_Occurring_A, Co_Occurring_B, ~ length(intersect(.x, .y)))
+    ) %>%
+    dplyr::select(-Prey_A, -Prey_B, -Co_Occurring_A, -Co_Occurring_B)  # Remove temp columns
+  
+  # Convert back to dataframe
+  Competition_spain_df <- as.data.frame(Competition_spain_df)
+  
+  # Save the computed data to CSV
+  write.csv(Competition_spain_df, "Competition_data_spain.csv", row.names = FALSE)
+}
 
 Competition_spain_df$RealizedDietOverlapA<-
   Competition_spain_df$Shared_Co_Occurring_Prey/Competition_spain_df$TotalPrey_A
