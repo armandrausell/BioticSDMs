@@ -1,8 +1,6 @@
 
-library(igraph)
 #library(blockmodels)
 library(ggplot2)
-library(RColorBrewer)
 library(readr)
 library(tidyr)
 library(magrittr)
