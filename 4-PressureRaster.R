@@ -2,9 +2,9 @@
 library(terra)
 library(dplyr)
 library(psych)
-
+Competition_spain_df<-Competition_weighted
 # Define function to get top competitors for any species
-get_top_competitors <- function(species_name, n = 5)  { #amount of species to get
+get_top_competitors <- function(species_name, n = 5, sizeWeight = T)  { #amount of species to get
   top_pressure_species <- Competition_spain_df %>%
     filter(Predator_A == species_name | Predator_B == species_name) %>%
     mutate(
@@ -248,7 +248,7 @@ if (file.exists("Correlation_distribution_w_competition.csv")) {
 all_correlation_results$difference<-all_correlation_results$Correlation_Actual-all_correlation_results$Correlation_Richness
 
 # Select the best number of competitor count for each species
-Opt_comptetitor_per_species <- all_correlation_results %>%
+Opt_competitor_per_species <- all_correlation_results %>%
   group_by(Species) %>%
   filter(abs(Corr_Act_Biserial) == max(abs(Corr_Act_Biserial))) %>%
   mutate(Corr_Act_Biserial = abs(Corr_Act_Biserial) * sign(Corr_Act_Biserial)) %>%  # Preserve sign
@@ -259,7 +259,7 @@ library(ggplot2)
 library(ggrepel)  # For better label placement
 
 # Ensure both size and color have the same scale and breaks
-ggplot(Opt_comptetitor_per_species, aes(x = Corr_Act_Biserial, y = Correlation_Richness, label = Species)) +
+gg<-ggplot(Opt_competitor_per_species, aes(x = Corr_Act_Biserial, y = Correlation_Richness, label = Species)) +
   geom_point(alpha = 0.8, aes(size = Num_Competitors, color = Num_Competitors)) +  # Maintain point visibility
   scale_color_continuous(limits=c(1, 15), breaks=seq(1, 15, by=2),low = "#f7b9b5", high = "darkred") +
   scale_size_continuous(name = "Number of Competitors", breaks = seq(1, 15, by = 2), limits = c(1, 15)) +  
@@ -277,3 +277,7 @@ ggplot(Opt_comptetitor_per_species, aes(x = Corr_Act_Biserial, y = Correlation_R
   ) +
   theme_minimal() +  
   theme(legend.position = "right")
+print(gg)
+ggsave("Correlation_With_class.jpg", plot = gg, width = 10, height = 6, dpi = 600)
+
+
