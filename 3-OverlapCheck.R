@@ -223,8 +223,4 @@ Competition_spain_df$PressureBtoA<-Competition_spain_df$alphaA*Competition_spain
 Competition_spain_df$PressureAtoB<-Competition_spain_df$alphaB*Competition_spain_df$Proportion_B_Shares+
   (1-Competition_spain_df$alphaB)*Competition_spain_df$RealizedDietOverlapB
 
-Competition_spain_df1<-Competition_spain_df %>%
-  mutate(
-    DeltaPressure=abs(PressureBtoA-PressureAtoB)
-  )
 
