@@ -5,16 +5,40 @@
 SpeciesNames<-Species_spain_df[,-1]
 
 names_sps<-names(SpeciesNames) #Extract names
+names_sps<-sort(names_sps)
 
 #Remove "." from the names to create clean vector of names
 names_sps <- gsub("\\.", " ", names_sps)  # Replace dot with space
 print(names_sps)
 
 library(dplyr)
+library(NetIndices)
 
 # Filter only interactions where both predators exist in names_sps, in Spain.
 interaction_df_spain <- interaction_df %>%
   filter(Predator_A %in% names_sps & Predator_B %in% names_sps)
+
+# Filter only interactions where both PREY exist in names_sps, in Spain.
+prey_df_spain <- prey_interaction_df %>%
+  filter(Prey_A %in% names_sps & Prey_B %in% names_sps)
+
+# Filter from the total list the species that are in Spain
+prey_count_spain<-prey_df %>% filter(Species %in% names_sps)
+predator_count_spain<- total_prey_df %>% filter(Predator %in% names_sps)
+
+proportion_prey_predator<-cbind(prey_count_spain,predator_count_spain)
+proportion_prey_predator<-proportion_prey_predator[,-3]
+
+#This creates a column with predatory ranking
+proportion_prey_predator$TrophicPosition<-
+  (proportion_prey_predator$Times_Preyed_On+1)/(proportion_prey_predator$TotalPrey+1)*-1
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))} # Range standardization 0-1
+
+proportion_prey_predator$TrophicPosition<- range01(proportion_prey_predator$TrophicPosition)
+
+#This will give us an order of species according the trophic position they occupy
+proportion_prey_predator$TrophicPosition<-rank(proportion_prey_predator$TrophicPosition)
 
 library(terra)
 library(FAMEFMR)

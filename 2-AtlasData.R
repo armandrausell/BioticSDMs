@@ -130,7 +130,7 @@ plot_species <- function(species_name) {
   spain_raster[!is.na(points_raster)] <- 1
   
   # Plot raster with species occurrences highlighted
-  plot(spain_raster, col=c("gray", "red"), main=paste("Species:", species_to_plot))
+  plot(spain_raster, col=c("gray", "black"), main=paste("Species:", species_to_plot))
   
   return(spain_raster)
   # Add occurrence points to the plot

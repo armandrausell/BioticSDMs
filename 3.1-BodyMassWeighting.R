@@ -44,27 +44,6 @@ Competition_weighted <- Competition_weighted %>%
   mutate(BodyMass_A = as.numeric(BodyMass_A),
          BodyMass_B = as.numeric(BodyMass_B))
 
-#sigmoid <- function(x) {
-#  1 / (1 + exp(-x))  # Sigmoid function
-#}
-
-#Competition_weighted <- Competition_weighted %>%
-#  mutate(
-#    SigmoidRatioAtoB = sigmoid(BodyMass_A / BodyMass_B - 1),  
-#    SigmoidRatioBtoA = sigmoid(BodyMass_B / BodyMass_A - 1)
- # )
-
-#Calculate the amount of pressure competitors exert over the others
-#Competition_weighted <- Competition_weighted %>%
- # mutate(
-  #  PressureBtoA = round(
-   #   (alphaA * Proportion_A_Shares + (1 - alphaA) * RealizedDietOverlapA) * SigmoidRatioBtoA, 3
-    #),
-    #PressureAtoB = round(
-    #  (alphaB * Proportion_B_Shares + (1 - alphaB) * RealizedDietOverlapB) * SigmoidRatioAtoB, 3
-  #)
-    #)
-
 
 # Define Gaussian function
 gaussian_similarity <- function(mass_A, mass_B, sigma = 1.8) {
