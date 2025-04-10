@@ -66,128 +66,189 @@ trophic_position_df <- lapply(fw_binary_list, function(mat) {
 })
 ################
 compute_rpp_and_tp <- function(binary_matrix) {
-  # Extract all species
   predators <- rownames(binary_matrix)
   preys <- colnames(binary_matrix)
   all_species <- union(predators, preys)
   
-  # Calculate preyed on and prey vectors
+  # Step 1: Compute Times_Preyed_On and Total_Prey
   times_preyed_on <- colSums(binary_matrix)
   total_prey <- rowSums(binary_matrix)
   names(times_preyed_on) <- colnames(binary_matrix)
   names(total_prey) <- rownames(binary_matrix)
   
-  # Trophic position dataframe
+  # Step 2: Compute Trophic Position
   tp_df <- data.frame(
     Species = all_species,
     Times_Preyed_On = ifelse(all_species %in% names(times_preyed_on), times_preyed_on[all_species], 0),
     Total_Prey = ifelse(all_species %in% names(total_prey), total_prey[all_species], 0)
   )
-  
-  # Trophic position calculation
   tp_df$TrophicPosition <- ((tp_df$Times_Preyed_On + 1) / (tp_df$Total_Prey + 1)) * -1
-  tp_df$TrophicPosition <- rank(tp_df$TrophicPosition)  # Optional: rank
+  tp_df$TrophicPosition <- rank(tp_df$TrophicPosition)
   
-  # Create lookup vectors
+  # Lookup vectors
   tp <- setNames(tp_df$TrophicPosition, tp_df$Species)
   total_prey_vec <- setNames(tp_df$Total_Prey, tp_df$Species)
   times_preyed_on_vec <- setNames(tp_df$Times_Preyed_On, tp_df$Species)
   
-  # Initialize rPP matrix
-  rPP_matrix <- matrix(0, nrow = length(predators), ncol = length(preys),
+  # Step 3: Median TP per predator
+  median_tp <- sapply(predators, function(pred) {
+    prey_names <- preys[binary_matrix[pred, ] == 1]
+    if (length(prey_names) == 0) return(NA)
+    median(tp[prey_names], na.rm = TRUE)
+  })
+  
+  # Step 4: Max deviation per predator
+  max_dev <- sapply(predators, function(pred) {
+    prey_names <- preys[binary_matrix[pred, ] == 1]
+    if (length(prey_names) == 0) return(0)
+    max(abs(tp[prey_names] - median_tp[pred]), na.rm = TRUE)
+  })
+  
+  # Step 5: Compute raw rPP and TCP matrices
+  rPP_matrix_raw <- matrix(0, nrow = length(predators), ncol = length(preys),
+                           dimnames = list(Predator = predators, Prey = preys))
+  tcp_matrix <- matrix(0, nrow = length(predators), ncol = length(preys),
                        dimnames = list(Predator = predators, Prey = preys))
   
-  # Fill rPP values where interaction exists
   for (pred in predators) {
     for (prey in preys) {
       if (binary_matrix[pred, prey] == 1 && pred != prey) {
-        rPP_matrix[pred, prey] <- (abs(tp[pred] - tp[prey]) * (1 / (total_prey_vec[pred] + 1))) /
-          (times_preyed_on_vec[prey] + 1)
+        abs_dev <- abs(tp[prey] - median_tp[pred])
+        tcp <- if (max_dev[pred] > 0) 1 - (abs_dev / max_dev[pred]) else 1
+        tcp_matrix[pred, prey] <- tcp
+        
+        rPP_matrix_raw[pred, prey] <- (
+          log2(abs(tp[pred] - tp[prey]) + 1) *
+            (1 / (1 + total_prey_vec[pred] * (1 - tcp)))
+        ) / (times_preyed_on_vec[prey] + 1)
       }
     }
   }
   
-  # Normalize rows so each predator's outgoing rPPs sum to 1
-  rPP_normalized <- rPP_matrix
-  for (pred in rownames(rPP_matrix)) {
-    row_sum <- sum(rPP_matrix[pred, ], na.rm = TRUE)
+  # Step 6: Normalize rPP per predator (row)
+  rPP_matrix_norm <- rPP_matrix_raw
+  for (pred in rownames(rPP_matrix_raw)) {
+    row_sum <- sum(rPP_matrix_raw[pred, ], na.rm = TRUE)
     if (row_sum > 0) {
-      rPP_normalized[pred, ] <- rPP_matrix[pred, ] / row_sum
+      rPP_matrix_norm[pred, ] <- rPP_matrix_raw[pred, ] / row_sum
     }
   }
   
-  # Return both outputs
+  # Step 7: Create interaction table with both raw and normalized rPP
+  interaction_table <- data.frame()
+  
+  for (pred in predators) {
+    for (prey in preys) {
+      if (binary_matrix[pred, prey] == 1 && pred != prey) {
+        interaction_table <- rbind(interaction_table, data.frame(
+          Predator = pred,
+          Prey = prey,
+          TrophicPositionPred = tp[pred],
+          TrophicPositionPrey = tp[prey],
+          TotalPrey_Pred = total_prey_vec[pred],
+          Times_Prey_Preyed = times_preyed_on_vec[prey],
+          TrophicCoreProximity = tcp_matrix[pred, prey],
+          rPP_raw = rPP_matrix_raw[pred, prey],
+          rPP = rPP_matrix_norm[pred, prey]
+        ))
+      }
+    }
+  }
+  
   return(list(
-    rPP_matrix = rPP_normalized,
-    trophic_position_df = tp_df
+    rPP_matrix = rPP_matrix_norm,
+    TP = tp_df,
+    InteractionTable = interaction_table
   ))
 }
+# Apply the function
 rPP_outputs <- lapply(fw_binary_list, compute_rpp_and_tp)
 
+matrix_pairs_list_df <- list()  # NEW list to store original & rPP matrices
+matrix_pairs_list <- list()  # NEW list to store original & rPP matrices
 
-
-# Initialize results table
 correlation_results <- data.frame(
   Network = character(),
-  Pearson = numeric(),
-  Spearman = numeric(),
+  Mean_Spearman = numeric(),
+  Median_Spearman = numeric(),
+  Links = integer(),
   stringsAsFactors = FALSE
 )
 
-# Loop through each network name in the list
 for (name in names(fw_data_list)) {
   original_mat <- fw_data_list[[name]]
   rpp_mat <- rPP_outputs[[name]]$rPP_matrix
   
-  # Flatten both matrices to vectors
-  original_vec <- as.vector(original_mat)
-  rpp_vec <- as.vector(rpp_mat)
+  prey_species <- colnames(original_mat)
+  predator_species <- rownames(original_mat)
   
-  # Compare only where binary == 1 (existing links)
-  mask <- which(original_vec > 0 & !is.na(rpp_vec))
+  spearman_values <- c()
   
-  if (length(mask) > 1) {
-    binary_links <- original_vec[mask]
-    rpp_links <- rpp_vec[mask]
+  for (prey in prey_species) {
+    original_col <- original_mat[, prey]
+    rpp_col <- rpp_mat[, prey]
     
-    pearson <- cor(binary_links, rpp_links, method = "pearson")
-    spearman <- cor(binary_links, rpp_links, method = "spearman")
-  } else {
-    pearson <- NA
-    spearman <- NA
+    # Only keep predators that have interaction in original
+    valid_mask <- which(original_col > 0 & !is.na(rpp_col))
+    
+    if (length(valid_mask) > 1) {
+      orig_vals <- original_col[valid_mask]
+      rpp_vals <- rpp_col[valid_mask]
+      
+      corr_val <- suppressWarnings(cor(orig_vals, rpp_vals, method = "spearman"))
+      spearman_values <- c(spearman_values, corr_val)
+    }
   }
   
-  # Assuming you already have binary_links and rpp_links from the previous code
+  # Summary stats
+  mean_corr <- mean(spearman_values, na.rm = TRUE)
+  median_corr <- median(spearman_values, na.rm = TRUE)
   
-  library(ggplot2)
-  
-  # Create a data frame for plotting
-  plot_data <- data.frame(
-    Binary_Links = binary_links,
-    rPP_Links = rpp_links
-  )
-  
-  # Plot using ggplot
-  g<-ggplot(plot_data, aes(x = Binary_Links, y = rPP_Links)) +
-    geom_point(alpha = 0.7, color = "blue") +
-    labs(
-      title = paste0(name," Original vs predicted interaction strenght"),
-      x = "Original strenght",
-      y = "Predicted strenght"
-    ) +
-    theme_minimal() +
-    theme(
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank()
+  correlation_results <- rbind(
+    correlation_results,
+    data.frame(
+      Network = name,
+      Mean_Spearman = mean_corr,
+      Median_Spearman = median_corr,
+      Links = nrow(original_mat)
     )
-  
-  print(g)
-  
-  correlation_results <- rbind(correlation_results, data.frame(
-    Network = name,
-    Pearson = pearson,
-    Spearman = spearman
-  ))
+  )
 }
 
+###############################
+# ASSESS DIFFERENCES IN CALCULUS
+###############################
+difference_list <- list()  # New list to store the result per network
 
+for (name in names(matrix_pairs_list)) {
+  original_df <- matrix_pairs_list[[name]]$Original
+  rpp_df <- matrix_pairs_list[[name]]$rPP
+  
+  # Ensure both have the same row and column names
+  if (!all(rownames(original_df) == rownames(rpp_df)) ||
+      !all(colnames(original_df) == colnames(rpp_df))) {
+    warning(paste("Mismatch in row/col names for:", name))
+    next
+  }
+  
+  # Convert to matrices for element-wise subtraction
+  original_mat <- as.matrix(original_df)
+  rpp_mat <- as.matrix(rpp_df)
+  
+  # Calculate difference: rPP - Original
+  diff_mat <- rpp_mat - original_mat
+  
+  # Convert to long format
+  diff_long <- as.data.frame(as.table(diff_mat)) %>%
+    rename(Predator = Var1, Prey = Var2, Difference = Freq) %>%
+    mutate(Network = name)
+  
+  difference_list[[name]] <- diff_long
+}
+
+# Combine all into a single dataframe
+difference_df <- bind_rows(difference_list)
+
+# Optional: arrange by absolute difference
+difference_df <- difference_df %>%
+  arrange(desc(abs(Difference)))
