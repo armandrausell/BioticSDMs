@@ -3,27 +3,73 @@
 ###
 
 # Get all file paths matching FW_*.csv recursively (all the foodwebs)
-fw_files <- list.files(path = "~/Desktop/Research/FoodWebsData", pattern = "^FW_.*\\.csv$", 
+fw_files <- list.files(path = "~/Desktop/Research/FoodWebsData/WebsWithSpNames", pattern = "^FW_.*\\.csv$", 
                        full.names = TRUE, recursive = TRUE)
 
 # Read each CSV and store in a named list
 fw_data_list <- lapply(fw_files, read.csv)
 
+fw_data_list <- lapply(fw_data_list, function(mat) {
+  # Ensure it's a data frame
+  df <- as.data.frame(mat)
+  
+  # Set first column as rownames (species names)
+  rownames(df) <- df[[1]]
+  
+  # Remove first column
+  df <- df[, -1, drop = FALSE]
+  
+  # Clean row and column names: replace spaces or dots with underscores
+  rownames(df) <- gsub("[ .]", "_", rownames(df))
+  colnames(df) <- gsub("[ .]", "_", colnames(df))
+  
+  return(df)
+})
+
+
+fw_data_list <- lapply(fw_data_list, function(df) {
+  # Ensure df is a data.frame
+  df <- as.data.frame(df)
+  
+  # Get all unique species across rows and columns
+  all_species <- union(rownames(df), colnames(df))
+  
+  # Add missing rows
+  missing_rows <- setdiff(all_species, rownames(df))
+  if (length(missing_rows) > 0) {
+    empty_rows <- matrix(0, nrow = length(missing_rows), ncol = ncol(df))
+    rownames(empty_rows) <- missing_rows
+    colnames(empty_rows) <- colnames(df)
+    df <- rbind(df, empty_rows)
+  }
+  
+  # Add missing columns
+  missing_cols <- setdiff(all_species, colnames(df))
+  if (length(missing_cols) > 0) {
+    empty_cols <- matrix(0, nrow = nrow(df), ncol = length(missing_cols))
+    colnames(empty_cols) <- missing_cols
+    rownames(empty_cols) <- rownames(df)
+    df <- cbind(df, empty_cols)
+  }
+  
+  # Reorder rows and columns to the same species order
+  df <- df[all_species, all_species]
+  
+  return(df)
+})
+
+
 # Name the list elements using the base file names (without extension)
 names(fw_data_list) <- tools::file_path_sans_ext(basename(fw_files))
 
 # Example: access FW_005 data
-fw_data_list$FW_005
+view(fw_data_list$FW_005)
 
 # Apply transformation to all matrices in fw_data_list
 fw_data_list <- lapply(fw_data_list, function(mat) {
   # Ensure it's a matrix (in case it was read as a data frame)
   mat <- as.matrix(mat)
-  
-  # Rename rows and columns generically
-  rownames(mat) <- paste0("Prey", seq_len(nrow(mat)))
-  colnames(mat) <- paste0("Pred", seq_len(ncol(mat)))
-  
+
   # Transpose so rows are predators and columns are prey
   mat_t <- t(mat)
   
@@ -61,7 +107,7 @@ trophic_position_df <- lapply(fw_binary_list, function(mat) {
   # Calculate Trophic Position
   tp_df$TrophicPosition <- ((tp_df$Times_Preyed_On + 1) / (tp_df$Total_Prey + 1)) * -1
   
-  tp_df$TrophicPosition<-rank(tp_df$TrophicPosition)
+  #tp_df$TrophicPosition<-rank(tp_df$TrophicPosition)
   return(tp_df)
 })
 ################
@@ -127,10 +173,10 @@ compute_rpp_and_tp <- function(binary_matrix) {
   
   # Step 6: Normalize rPP per predator (row)
   rPP_matrix_norm <- rPP_matrix_raw
-  for (pred in rownames(rPP_matrix_raw)) {
-    row_sum <- sum(rPP_matrix_raw[pred, ], na.rm = TRUE)
+  for (prey in colnames(rPP_matrix_raw)) {
+    row_sum <- sum(rPP_matrix_raw[,prey ], na.rm = TRUE)
     if (row_sum > 0) {
-      rPP_matrix_norm[pred, ] <- rPP_matrix_raw[pred, ] / row_sum
+      rPP_matrix_norm[,prey ] <- rPP_matrix_raw[,prey ] / row_sum
     }
   }
   
@@ -148,6 +194,8 @@ compute_rpp_and_tp <- function(binary_matrix) {
           TotalPrey_Pred = total_prey_vec[pred],
           Times_Prey_Preyed = times_preyed_on_vec[prey],
           TrophicCoreProximity = tcp_matrix[pred, prey],
+          MedianTP_Pred = median_tp[pred],
+          AbsDev = abs(tp[prey] - median_tp[pred]),
           rPP_raw = rPP_matrix_raw[pred, prey],
           rPP = rPP_matrix_norm[pred, prey]
         ))
@@ -156,7 +204,7 @@ compute_rpp_and_tp <- function(binary_matrix) {
   }
   
   return(list(
-    rPP_matrix = rPP_matrix_norm,
+    rPP_matrix = rPP_matrix_raw, #
     TP = tp_df,
     InteractionTable = interaction_table
   ))
@@ -167,6 +215,8 @@ rPP_outputs <- lapply(fw_binary_list, compute_rpp_and_tp)
 matrix_pairs_list_df <- list()  # NEW list to store original & rPP matrices
 matrix_pairs_list <- list()  # NEW list to store original & rPP matrices
 
+
+# Initialize global summary
 correlation_results <- data.frame(
   Network = character(),
   Mean_Spearman = numeric(),
@@ -175,10 +225,25 @@ correlation_results <- data.frame(
   stringsAsFactors = FALSE
 )
 
+# Initialize detailed table
+prey_spearman_table <- data.frame(
+  Network = character(),
+  Prey = character(),
+  Spearman = numeric(),
+  Num_Predators = integer(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through all food web matrices
 for (name in names(fw_data_list)) {
   original_mat <- fw_data_list[[name]]
   rpp_mat <- rPP_outputs[[name]]$rPP_matrix
   
+  # Store as data.frames in the list
+  matrix_pairs_list[[name]] <- list(
+    Original_df = as.data.frame(original_mat),
+    rPP_df = as.data.frame(rpp_mat)
+  )
   prey_species <- colnames(original_mat)
   predator_species <- rownames(original_mat)
   
@@ -188,32 +253,80 @@ for (name in names(fw_data_list)) {
     original_col <- original_mat[, prey]
     rpp_col <- rpp_mat[, prey]
     
-    # Only keep predators that have interaction in original
+    # Only compare where there's interaction
     valid_mask <- which(original_col > 0 & !is.na(rpp_col))
     
     if (length(valid_mask) > 1) {
       orig_vals <- original_col[valid_mask]
       rpp_vals <- rpp_col[valid_mask]
       
-      corr_val <- suppressWarnings(cor(orig_vals, rpp_vals, method = "spearman"))
-      spearman_values <- c(spearman_values, corr_val)
+      spearman_corr <- suppressWarnings(cor(orig_vals, rpp_vals, method = "spearman"))
+      spearman_values <- c(spearman_values, spearman_corr)
+      
+      # Store per-prey result with number of predators
+      prey_spearman_table <- rbind(
+        prey_spearman_table,
+        data.frame(
+          Network = name,
+          Prey = prey,
+          Spearman = spearman_corr,
+          Num_Predators = length(valid_mask)
+        )
+      )
     }
   }
   
-  # Summary stats
-  mean_corr <- mean(spearman_values, na.rm = TRUE)
-  median_corr <- median(spearman_values, na.rm = TRUE)
-  
+  # Global summary per network
   correlation_results <- rbind(
     correlation_results,
     data.frame(
       Network = name,
-      Mean_Spearman = mean_corr,
-      Median_Spearman = median_corr,
+      Mean_Spearman = mean(spearman_values, na.rm = TRUE),
+      Median_Spearman = median(spearman_values, na.rm = TRUE),
       Links = nrow(original_mat)
     )
   )
 }
+
+###############################
+# Function to check case by case
+Check_comparisons <- function(list_name, prey_species) {
+  original_mat <- fw_data_list[[list_name]]
+  rpp_mat <- rPP_outputs[[list_name]]$rPP_matrix
+  
+  # Check that prey_species exists in the matrix
+  if (!(prey_species %in% colnames(original_mat))) {
+    stop(paste("Prey species", prey_species, "not found in", list_name))
+  }
+  
+  # Extract the prey column
+  original_col <- original_mat[, prey_species]
+  rpp_col <- rpp_mat[, prey_species]
+  
+  # Only keep values where interaction is present
+  valid_mask <- which(original_col > 0 & !is.na(rpp_col))
+  
+  if (length(valid_mask) > 1) {
+    orig_vals <- original_col[valid_mask]
+    rpp_vals <- rpp_col[valid_mask]
+    predators <- rownames(original_mat)[valid_mask]
+    
+    result_df <- data.frame(
+      Predator = predators,
+      Original = orig_vals,
+      rPP = rpp_vals
+    )
+    
+    view(result_df)
+    return(result_df)
+  } else {
+    cat("No valid predator interactions for", prey_species, "in", list_name, "\n")
+    return(NULL)
+  }
+}
+
+Check_comparisons("FW_017_02", "Cephalopoda")
+
 
 ###############################
 # ASSESS DIFFERENCES IN CALCULUS
