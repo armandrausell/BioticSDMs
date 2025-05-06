@@ -78,7 +78,7 @@ fw_data_list <- lapply(fw_data_list, function(mat) {
 
 library(dplyr)
 
-# Step 1: Create binary version of the webs
+# Create binary version of the webs
 fw_binary_list <- lapply(fw_data_list, function(mat) {
   mat_bin <- ifelse(mat > 0, 1, 0)
   return(mat_bin)
@@ -187,8 +187,7 @@ compute_rpp_and_tp <- function(binary_matrix) {
   for (pred in predators) {
     prey_names <- preys[binary_matrix[pred, ] == 1]
     tp_sd <- sd(tp[prey_names], na.rm = TRUE)  # SD of prey TP for this predator
-    
-    for (prey in preys) {
+     for (prey in preys) {
       if (binary_matrix[pred, prey] == 1 && pred != prey) {
         abs_dev <- abs(tp[prey] - median_tp[pred])
         
@@ -216,13 +215,19 @@ compute_rpp_and_tp <- function(binary_matrix) {
         #) / (times_preyed_on_vec[prey] + 1)
         
         # Final rPP formula
-       # rPP_matrix_raw[pred, prey] <- (
+        #rPP_matrix_raw[pred, prey] <- (
         #  (exp(-(((abs(tp[pred] - tp[prey]) - (tp[pred]/2))^2)) / (2 * (nrow(binary_matrix)*0.2)^2))) *
         #    (1 / (1 + total_prey_vec[pred] * (1 - tcp)))
       #  ) / (times_preyed_on_vec[prey] + 1)
         
+        # Formula with tp/2 and sd
+       # rPP_matrix_raw[pred, prey] <- (
+       #   exp(-(((abs(tp[pred] - tp[prey]) - (tp[pred]/2))^2)) / (2 * (tp_sd^2))) *
+       #     (1 / (1 + total_prey_vec[pred] * (1 - tcp)))
+       # ) / (times_preyed_on_vec[prey] + 1)
+        
         rPP_matrix_raw[pred, prey] <- (
-          exp(-(((abs(tp[pred] - tp[prey]) - (tp[pred]/2))^2)) / (2 * (tp_sd^2))) *
+          (exp(-(((abs(tp[pred] - tp[prey]) - (median_tp[pred]))^2)) / (2 * (nrow(binary_matrix)*0.2)^2))) *
             (1 / (1 + total_prey_vec[pred] * (1 - tcp)))
         ) / (times_preyed_on_vec[prey] + 1)
         
