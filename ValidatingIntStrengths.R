@@ -136,42 +136,101 @@ compute_rpp_and_tp <- function(binary_matrix) {
   total_prey_vec <- setNames(tp_df$Total_Prey, tp_df$Species)
   times_preyed_on_vec <- setNames(tp_df$Times_Preyed_On, tp_df$Species)
   
-  # Step 3: Median TP per predator
+  # Median TP per predator
   median_tp <- sapply(predators, function(pred) {
     prey_names <- preys[binary_matrix[pred, ] == 1]
     if (length(prey_names) == 0) return(NA)
     median(tp[prey_names], na.rm = TRUE)
   })
   
-  # Step 4: Max deviation per predator
+  # Median TP per predator
+  mean_tp <- sapply(predators, function(pred) {
+    prey_names <- preys[binary_matrix[pred, ] == 1]
+    if (length(prey_names) == 0) return(NA)
+    mean(tp[prey_names], na.rm = TRUE)
+  })
+  
+  # Max deviation per predator
   max_dev <- sapply(predators, function(pred) {
     prey_names <- preys[binary_matrix[pred, ] == 1]
     if (length(prey_names) == 0) return(0)
     max(abs(tp[prey_names] - median_tp[pred]), na.rm = TRUE)
   })
   
-  # Step 5: Compute raw rPP and TCP matrices
+  # Median TP of predators for each prey
+  median_ptp <- sapply(preys, function(prey) {
+    predator_names <- rownames(binary_matrix)[binary_matrix[, prey] == 1]
+    if (length(predator_names) == 0) return(NA)
+    median(tp[predator_names], na.rm = TRUE)
+  })
+  
+  # Compute max deviation from predator median per prey
+  max_dev_ptp <- sapply(preys, function(prey) {
+    predator_names <- rownames(binary_matrix)[binary_matrix[, prey] == 1]
+    if (length(predator_names) == 0) return(0)
+    max(abs(tp[predator_names] - median_ptp[prey]), na.rm = TRUE)
+  })
+  
+  # Compute standard deviation of prey TP per predator
+  sd_tp <- sapply(predators, function(pred) {
+    prey_names <- preys[binary_matrix[pred, ] == 1]
+    if (length(prey_names) == 0) return(NA)
+    sd(tp[prey_names], na.rm = TRUE)
+  })
+  
+  # Compute raw rPP and TCP matrices
   rPP_matrix_raw <- matrix(0, nrow = length(predators), ncol = length(preys),
                            dimnames = list(Predator = predators, Prey = preys))
   tcp_matrix <- matrix(0, nrow = length(predators), ncol = length(preys),
                        dimnames = list(Predator = predators, Prey = preys))
   
   for (pred in predators) {
+    prey_names <- preys[binary_matrix[pred, ] == 1]
+    tp_sd <- sd(tp[prey_names], na.rm = TRUE)  # SD of prey TP for this predator
+    
     for (prey in preys) {
       if (binary_matrix[pred, prey] == 1 && pred != prey) {
         abs_dev <- abs(tp[prey] - median_tp[pred])
-        tcp <- if (max_dev[pred] > 0) 1 - (abs_dev / max_dev[pred]) else 1
+        
+        # Smooth TCP scaling
+        alpha <- 0.2
+        beta <- 10
+        tcp_original <- if (max_dev[pred] > 0) 1 - (abs_dev / max_dev[pred]) else 1
+        scaling_factor <- 1 / (1 + exp(-alpha * (total_prey_vec[pred] - beta)))
+        tcp <- 1 - ((1 - tcp_original) * scaling_factor)
         tcp_matrix[pred, prey] <- tcp
         
+        # Modulate by similarity to median predator TP for prey
+        dev_from_ptp <- abs(tp[pred] - median_ptp[prey])
+        max_dev_val <- max_dev_ptp[prey]
+        if (is.na(dev_from_ptp) || is.na(max_dev_val) || max_dev_val == 0) {
+          pred_similarity <- 1  # no modulation
+        } else {
+          pred_similarity <- 1 - (dev_from_ptp / max_dev_val)
+        }
+        
+        # Final rPP formula
+        #rPP_matrix_raw[pred, prey] <- (
+         # log2(abs(tp[pred] - tp[prey]) + 1) *
+          #  (1 / (1 + total_prey_vec[pred] * (1 - tcp)))
+        #) / (times_preyed_on_vec[prey] + 1)
+        
+        # Final rPP formula
+       # rPP_matrix_raw[pred, prey] <- (
+        #  (exp(-(((abs(tp[pred] - tp[prey]) - (tp[pred]/2))^2)) / (2 * (nrow(binary_matrix)*0.2)^2))) *
+        #    (1 / (1 + total_prey_vec[pred] * (1 - tcp)))
+      #  ) / (times_preyed_on_vec[prey] + 1)
+        
         rPP_matrix_raw[pred, prey] <- (
-          log2(abs(tp[pred] - tp[prey]) + 1) *
+          exp(-(((abs(tp[pred] - tp[prey]) - (tp[pred]/2))^2)) / (2 * (tp_sd^2))) *
             (1 / (1 + total_prey_vec[pred] * (1 - tcp)))
         ) / (times_preyed_on_vec[prey] + 1)
+        
       }
     }
   }
   
-  # Step 6: Normalize rPP per predator (row)
+  # Normalize rPP per prey (column)
   rPP_matrix_norm <- rPP_matrix_raw
   for (prey in colnames(rPP_matrix_raw)) {
     row_sum <- sum(rPP_matrix_raw[,prey ], na.rm = TRUE)
@@ -194,7 +253,8 @@ compute_rpp_and_tp <- function(binary_matrix) {
           TotalPrey_Pred = total_prey_vec[pred],
           Times_Prey_Preyed = times_preyed_on_vec[prey],
           TrophicCoreProximity = tcp_matrix[pred, prey],
-          MedianTP_Pred = median_tp[pred],
+          MedianPreyTP = median_tp[pred],
+          MedianPredTP = median_ptp[prey],
           AbsDev = abs(tp[prey] - median_tp[pred]),
           rPP_raw = rPP_matrix_raw[pred, prey],
           rPP = rPP_matrix_norm[pred, prey]
@@ -286,8 +346,9 @@ for (name in names(fw_data_list)) {
       Links = nrow(original_mat)
     )
   )
+  corr_sum<-sum(correlation_results$Median_Spearman)
 }
-
+print(corr_sum)
 ###############################
 # Function to check case by case
 Check_comparisons <- function(list_name, prey_species) {

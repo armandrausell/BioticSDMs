@@ -240,11 +240,25 @@ Competition_spain_df <- Competition_spain_df %>%
   mutate(alphaB = (TotalPrey_B - min(TotalPrey_B, na.rm = TRUE)) /
            (max(TotalPrey_B, na.rm = TRUE) - min(TotalPrey_B, na.rm = TRUE)))
 
-#Calculate the amount of pressure competitors exert over the others
-Competition_spain_df$PressureBtoA<-Competition_spain_df$alphaA*Competition_spain_df$Proportion_A_Shares+
-  (1-Competition_spain_df$alphaA)*Competition_spain_df$RealizedDietOverlapA
+# Adding trophic position of each predator to the table
+# First, join for Predator_A
+Competition_spain_df <- Competition_spain_df %>%
+  left_join(proportion_prey_predator %>%
+              dplyr::select(Species, TrophicPosition) %>%
+              rename(Predator_A = Species, TPA = TrophicPosition),
+            by = "Predator_A")
 
-Competition_spain_df$PressureAtoB<-Competition_spain_df$alphaB*Competition_spain_df$Proportion_B_Shares+
-  (1-Competition_spain_df$alphaB)*Competition_spain_df$RealizedDietOverlapB
+# Then, join for Predator_B
+Competition_spain_df <- Competition_spain_df %>%
+  left_join(proportion_prey_predator %>%
+              dplyr::select(Species, TrophicPosition) %>%
+              rename(Predator_B = Species, TPB = TrophicPosition),
+            by = "Predator_B")
 
+#Ensure that non-co-occurring species compete
+Competition_spain_df <- Competition_spain_df %>%
+  mutate(
+    RealizedDietOverlapA = ifelse(Overlap == 0, 0, RealizedDietOverlapA),
+    RealizedDietOverlapB = ifelse(Overlap == 0, 0, RealizedDietOverlapB)
+  )
 

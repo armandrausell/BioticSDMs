@@ -189,6 +189,13 @@ predation_pairs_tp1 <- predation_pairs_tp1 %>%
 # Calculate Relative Predator Pressure (rPP)
 Relative_pred_pressure <- predation_pairs_tp1 %>%
   mutate(
+    rPP = (abs(TrophicPositionPred - TrophicPositionPrey) * (1 / TotalPrey_Pred)
+           * TrophicCoreProximity) / 
+      (Times_Prey_Preyed + 1)
+  )
+
+Relative_test <- predation_pairs_tp1 %>%
+  mutate(
     rPP = (log2(abs(TrophicPositionPred - TrophicPositionPrey)) * 
              (1 / (1+TotalPrey_Pred*(1-TrophicCoreProximity)))) 
     / 
