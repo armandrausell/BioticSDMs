@@ -104,7 +104,7 @@ if (file.exists("Species_raster_cache.qs")) {
 names_species_cache<-names(species_raster_cache)
 
 # Function to check overlap between two species
-check_overlap <- function(species_A, species_B) {
+check_overlap <- function(species_A, species_B, plot=F) {
   # Get rasters for both species
   raster_A <- get.sp.raster(species_A) #plot_species is created in AtlasData.R
   raster_B <- get.sp.raster(species_B)
@@ -112,6 +112,8 @@ check_overlap <- function(species_A, species_B) {
   # Sum both rasters (cells with 2 indicate overlap)
   combined_raster <- raster_A + raster_B
   
+  if(plot == TRUE){
+    plot(combined_raster)}
   # Count overlapping cells (value = 2)
   overlap_cells <- sum(values(combined_raster) == 2, na.rm = TRUE)
   

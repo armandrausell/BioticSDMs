@@ -196,11 +196,15 @@ Relative_pred_pressure <- predation_pairs_tp1 %>%
 
 Relative_test <- predation_pairs_tp1 %>%
   mutate(
-    rPP = (log2(abs(TrophicPositionPred - TrophicPositionPrey)) * 
-             (1 / (1+TotalPrey_Pred*(1-TrophicCoreProximity)))) 
-    / 
-      (Times_Prey_Preyed + 1)
+    rPP = (exp(-((abs(TrophicPositionPred - TrophicPositionPrey) - MedianTP)^2) / (2 * (nrow(binary_matrix_filtered)*0.2)^2)))/ 
+            ((1+TotalPrey_Pred*(1-TrophicCoreProximity))*(Times_Prey_Preyed + 1))
   )
+
+
+#Filter to common names
+Relative_test_filtered <- Relative_test[
+  Relative_test[[1]] %in% names_sps & Relative_test[[2]] %in% names_sps,
+]
 
 
 ############################################################

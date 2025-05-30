@@ -180,7 +180,7 @@ compute_species_richness <- function(species_list) {
   }
   
   # Plot the species richness map
-  plot(richness_raster, main = "Species Richness Map", col = terrain.colors(100))
+  plot(richness_raster, main = "Species Richness Map", col = rev(terrain.colors(100)))
   
   return(richness_raster)
 }
@@ -190,6 +190,21 @@ library(terra)
 .pa<-unique(Competition_weighted$Predator_A)
 .pb<-unique(Competition_weighted$Predator_B)
 unique_species<-unique(c(.pa,.pb))
+
+#Load hfp
+dir_vars<-"~/Desktop/proyecto_GANSO"
+hfp<-rast(paste0(dir_vars,"/variables/hfp_esp_2.5km.tif")) #1 km
+
+# Step 1: Reproject hfp to match spain_raster's CRS
+hfp_projected <- project(hfp, spain_raster)
+
+# Step 2: Resample hfp_projected to match the resolution and extent of spain_raster
+hfp_resampled <- resample(hfp_projected, spain_raster, method = "bilinear")  # or "near" for categorical
+
+# Optional: plot to check result
+plot(hfp_resampled)
+
+hfp_resampled <- mask(hfp_resampled, anyNA(spain_raster), maskvalue=TRUE)
 
 # Function to assess correlation for a species while varying competitor numbers
 evaluate_competitor_correlation <- function(species_name, max_competitors = 15, sizeWeight=TRUE, potentialDiet = FALSE) {
@@ -206,7 +221,8 @@ evaluate_competitor_correlation <- function(species_name, max_competitors = 15, 
     Num_Competitors = integer(),
     Correlation_Actual = numeric(),
     Correlation_Richness = numeric(),
-    Corr_Act_Biserial = numeric()
+    Corr_Act_Biserial = numeric(),
+    Corr_hfp = numeric()
   )
   
   # Loop through 1 to max_competitors
@@ -224,18 +240,23 @@ evaluate_competitor_correlation <- function(species_name, max_competitors = 15, 
     pressure_values <- values(pressure_map)
     actual_values <- values(actual_distribution)
     richness_values <- values(richness_map)
+    hfp_values <- values(hfp_resampled)
     
-    # Remove NA values from all three datasets
-    valid_indices <- !is.na(pressure_values) & !is.na(actual_values) & !is.na(richness_values)
+    # Remove NA values from all datasets
+    valid_indices <- !is.na(pressure_values) & !is.na(actual_values) & !is.na(richness_values) &!is.na(hfp_values)
     pressure_values <- pressure_values[valid_indices]
     actual_values <- actual_values[valid_indices]
     richness_values <- richness_values[valid_indices]
+    hfp_values <- hfp_values[valid_indices]
     
     # Compute Spearman correlation with actual species distribution
     correlation_actual <- cor(pressure_values, actual_values, method = "spearman")
     
     # Compute Spearman correlation with species richness map
     correlation_richness <- cor(pressure_values, richness_values, method = "spearman")
+    
+    # Compute Spearman correlation with human footprint
+    correlation_hfp <- biserial(hfp_values, actual_values)
     
     # Compute biserial correlation, similar to Pearson but for binary/continuous comparisons
     r_pb <- biserial(pressure_values, actual_values)
@@ -246,34 +267,57 @@ evaluate_competitor_correlation <- function(species_name, max_competitors = 15, 
       Num_Competitors = n,
       Correlation_Actual = correlation_actual,
       Correlation_Richness = correlation_richness,
-      Corr_Act_Biserial = r_pb
+      Corr_Act_Biserial = r_pb,
+      Corr_hfp = correlation_hfp
     ))
   }
   
   return(correlation_results)
 }
 
-  # Compute correlation results if the file does not exist
-  all_correlation_results <- data.frame()
-  for (species in unique_species) {
-    cat("Evaluating:", species, "\n")
-    species_results <- evaluate_competitor_correlation(species, max_competitors = 15, sizeWeight = T, potentialDiet = F)
-    all_correlation_results <- rbind(all_correlation_results, species_results)
-  }
+# Set parameters
+potentialDiet <- TRUE
+sizeWeight <- TRUE
+
+# Choose a name based on the parameters
+result_name <- if (potentialDiet) {
+  "all_correlation_results_potential"
+} else {
+  "all_correlation_results_realized"
+}
+
+# Initialize the object
+all_correlation_results <- data.frame()
+
+# Run loop
+for (species in unique_species) {
+  cat("Evaluating:", species, "\n")
+  species_results <- evaluate_competitor_correlation(
+    species,
+    max_competitors = 25,
+    sizeWeight = sizeWeight,
+    potentialDiet = potentialDiet
+  )
+  all_correlation_results <- rbind(all_correlation_results, species_results)
+}
+
+# Assign it to the dynamic name
+assign(result_name, all_correlation_results)
+
   
-  # Save the computed data to CSV
-  write.csv(all_correlation_results, "Complete_weighted_opt_competition.csv", row.names = FALSE)
+# Save the computed data to CSV
+write.csv(all_correlation_results_potential, "Corr_competition_potential.csv", row.names = FALSE)
+write.csv(all_correlation_results_realized, "Corr_competition_realized.csv", row.names = FALSE)
 
-
-all_correlation_results$difference<-all_correlation_results$Correlation_Actual-all_correlation_results$Correlation_Richness
 
 ##---------------------------------POTENTIAL------------------------------------------##
 # Select the best number of competitor count for each species
-Opt_competitor_per_species_potential <- all_correlation_results %>%
+Opt_competitor_per_species_potential <- all_correlation_results_potential %>%
   group_by(Species) %>%
   filter(abs(Corr_Act_Biserial) == max(abs(Corr_Act_Biserial))) %>%
+  slice_min(order_by = Num_Competitors, with_ties = FALSE) %>%
   mutate(Corr_Act_Biserial = abs(Corr_Act_Biserial) * sign(Corr_Act_Biserial)) %>%  # Preserve sign
-  dplyr::select(Species, Num_Competitors, Corr_Act_Biserial, Correlation_Richness) %>%
+  dplyr::select(Species, Num_Competitors, Corr_Act_Biserial, Correlation_Richness,Corr_hfp) %>%
   arrange(desc(Corr_Act_Biserial))
 
 library(dplyr)
@@ -282,11 +326,27 @@ Opt_competitor_per_species_potential <- Opt_competitor_per_species_potential %>%
   left_join(proportion_prey_predator %>%
               dplyr::select(Species, TrophicPosition),
             by = "Species")
+
+Opt_competitor_per_species_potential <- Opt_competitor_per_species_potential %>%
+  left_join(bm_combined %>%
+              dplyr::select(Species, Class,BodyMass_g),
+            by = "Species")
+
+Opt_competitor_per_species_potential <- Opt_competitor_per_species_potential %>%
+  mutate(BodyMass_g = as.numeric(BodyMass_g))
+
+Fixed_competitor_per_species_potential <- all_correlation_results_potential %>%
+  filter(Num_Competitors == 5) %>%
+  mutate(Corr_Act_Biserial = abs(Corr_Act_Biserial) * sign(Corr_Act_Biserial)) %>%  # Keep sign
+  dplyr::select(Species, Num_Competitors, Corr_Act_Biserial, Correlation_Richness) %>%
+  arrange(desc(Corr_Act_Biserial))
+
 ##--------------------------------REALIZED-------------------------------------------##
 # Select the best number of competitor count for each species
-Opt_competitor_per_species_realized <- all_correlation_results %>%
+Opt_competitor_per_species_realized <- all_correlation_results_realized %>%
   group_by(Species) %>%
   filter(abs(Corr_Act_Biserial) == max(abs(Corr_Act_Biserial))) %>%
+  slice_min(order_by = Num_Competitors, with_ties = FALSE) %>%
   mutate(Corr_Act_Biserial = abs(Corr_Act_Biserial) * sign(Corr_Act_Biserial)) %>%  # Preserve sign
   dplyr::select(Species, Num_Competitors, Corr_Act_Biserial, Correlation_Richness) %>%
   arrange(desc(Corr_Act_Biserial))
@@ -297,16 +357,31 @@ Opt_competitor_per_species_realized <- Opt_competitor_per_species_realized %>%
   left_join(proportion_prey_predator %>%
               dplyr::select(Species, TrophicPosition),
             by = "Species")
+
+Opt_competitor_per_species_realized <- Opt_competitor_per_species_realized %>%
+  left_join(bm_combined %>%
+              dplyr::select(Species, Class,BodyMass_g),
+            by = "Species")
+
+Opt_competitor_per_species_realized <- Opt_competitor_per_species_realized %>%
+  mutate(BodyMass_g = as.numeric(BodyMass_g))
+
+Fixed_competitor_per_species_realized <- all_correlation_results_realized %>%
+  filter(Num_Competitors == 5) %>%
+  mutate(Corr_Act_Biserial = abs(Corr_Act_Biserial) * sign(Corr_Act_Biserial)) %>%  # Keep sign
+  dplyr::select(Species, Num_Competitors, Corr_Act_Biserial, Correlation_Richness) %>%
+  arrange(desc(Corr_Act_Biserial))
 ##---------------------------------------------------------------------------##
 
 library(ggplot2)
 library(ggrepel)  # For better label placement
+library(paletteer)
 
 # Ensure both size and color have the same scale and breaks
-gg<-ggplot(Opt_competitor_per_species_realized, aes(x = Corr_Act_Biserial, y = Correlation_Richness, label = Species)) +
+gg<-ggplot(Opt_competitor_per_species_potential, aes(x = Corr_Act_Biserial, y = Correlation_Richness, label = Species)) +
   geom_point(alpha = 0.8, aes(size = Num_Competitors, color = Num_Competitors)) +  # Maintain point visibility
-  scale_color_continuous(limits=c(1, 15), breaks=seq(1, 15, by=2),low = "#f7b9b5", high = "darkred") +
-  scale_size_continuous(name = "Number of Competitors", breaks = seq(1, 15, by = 2), limits = c(1, 15)) +  
+  scale_color_continuous(limits=c(1, 25), breaks=seq(1, 25, by=2),low = "#f7b9b5", high = "darkred") +
+  scale_size_continuous(name = "Number of Competitors", breaks = seq(1, 25, by = 2), limits = c(1, 25)) +  
   #scale_color_viridis_c(name = "Number of Competitors", option = "plasma") +  # Using Viridis for better color mapping
   geom_vline(xintercept = 0, linetype="dashed")+
   geom_text_repel(aes(label = Species), size = 2, color = "black") +  # Keep text readable
@@ -324,11 +399,39 @@ gg<-ggplot(Opt_competitor_per_species_realized, aes(x = Corr_Act_Biserial, y = C
 print(gg)
 
 
-ggsave("Correlation_tp_With_size_potential.jpg", plot = gg, width = 10, height = 6, dpi = 600)
+ggsave("Figures/Correlation_tp_With_size_potential.jpg", plot = gg, width = 10, height = 6, dpi = 600)
 
 
 library(ggplot2)
 library(dplyr)
+
+##### FIXED NUMBER OF COMPETITORS ########
+
+ggf<-ggplot(Fixed_competitor_per_species_potential, aes(x = Corr_Act_Biserial, y = Correlation_Richness, label = Species)) +
+  geom_point(alpha = 0.8, aes(size = Num_Competitors, color = Num_Competitors)) +  # Maintain point visibility
+  scale_color_continuous(limits=c(1, 15), breaks=seq(1, 15, by=2),low = "#f7b9b5", high = "darkred") +
+  scale_size_continuous(name = "Number of Competitors", breaks = seq(1, 15, by = 2), limits = c(1, 15)) +  
+  #scale_color_viridis_c(name = "Number of Competitors", option = "plasma") +  # Using Viridis for better color mapping
+  geom_vline(xintercept = 0, linetype="dashed")+
+  geom_text_repel(aes(label = Species), size = 2, color = "black") +  # Keep text readable
+  labs(
+    title = "Relationship Potential competitive pressure with Species Richness and actual dist",
+    x = "Correlation with Actual Distribution",
+    y = "Correlation with Species Richness"
+  ) +
+  guides(
+    size = guide_legend(title = "Number of Competitors"),
+    color = guide_legend(title = "Number of Competitors")  # Force merging
+  ) +
+  theme_minimal() +  
+  theme(legend.position = "right")
+print(ggf)
+
+ggsave("Figures/Correlation_tp_With_size_fixed.jpg", plot = ggf, width = 10, height = 6, dpi = 600)
+
+#########################################
+
+
 
 # Combine the data for both treatments into a single dataframe
 df_combined <- bind_rows(
@@ -383,4 +486,61 @@ l1<-ggplot(df_combined, aes(x = Species, y = Corr_Act_Biserial, color = Treatmen
   )
 print(l1)
 
-ggsave("Lollipop_graph_potential_vs_realized.jpg", plot = l1, width = 11, height = 6, dpi = 600)
+ggsave("Lollipop_potential_vs_realized_dynamic.jpg", plot = l1, width = 11, height = 6, dpi = 600)
+
+############
+
+# Combine the data for both treatments into a single dataframe
+df_combined <- bind_rows(
+  Fixed_competitor_per_species_potential %>%
+    dplyr::select(Species, Corr_Act_Biserial) %>%
+    mutate(Treatment = "Potential"),
+  
+  Fixed_competitor_per_species_realized %>%
+    dplyr::select(Species, Corr_Act_Biserial) %>%
+    mutate(Treatment = "Realized")
+)
+
+# Order species based on ascending correlation in the Weighted treatment
+species_order <- df_combined %>%
+  filter(Treatment == "Realized") %>%
+  arrange(Corr_Act_Biserial) %>%
+  pull(Species) %>%
+  unique()  # Ensure unique species names
+
+df_combined <- df_combined %>%
+  filter(Species != "Neophron percnopterus")
+
+df_combined <- df_combined %>%
+  filter(Species != "Parus major")
+
+# Convert Species column into a factor with the specified order
+df_combined <- df_combined %>%
+  mutate(Species = factor(Species, levels = species_order, ordered = TRUE))
+
+
+# Calculate mean correlation for each treatment
+mean_values <- df_combined %>%
+  group_by(Treatment) %>%
+  summarise(mean_corr = mean(Corr_Act_Biserial))
+
+# Plot lollipop chart with horizontal mean lines
+l2<-ggplot(df_combined, aes(x = Species, y = Corr_Act_Biserial, color = Treatment)) +
+  geom_segment(aes(xend = Species, y = 0, yend = Corr_Act_Biserial), size = 0.5, alpha = 0.7) +
+  geom_point(size = 3) +
+  geom_hline(data = mean_values, aes(yintercept = mean_corr, color = Treatment), 
+             linetype = "dashed", size = 1, alpha = 0.8) +  # Add mean line for each treatment
+  scale_color_manual(values = c("blue", "red")) +  # Different colors for treatments
+  labs(
+    title = "Correlation with actual distribution by Species and Treatment",
+    x = "Species",
+    y = "Correlation (Biserial) with actual distribution"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),  # Rotate species names for readability
+    legend.position = "top"
+  )
+print(l2)
+
+ggsave("Lollipop_potential_vs_realized_fixed_comp.jpg", plot = l1, width = 11, height = 6, dpi = 600)
