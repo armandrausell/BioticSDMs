@@ -67,7 +67,7 @@ spain_cropped <- terra::crop(spain, e1)
 spain_raster <- rast(spain_vector, resolution = 10000)  # Adjust resolution as needed
 
 # Fill the raster with 0
-values(spain_raster) <- 0
+terra::values(spain_raster) <- 0
 
 # Plot the output
 plot(spain_raster)
@@ -75,7 +75,7 @@ plot(spain_cropped, col = "white", border = "black", axes = F, add=T)
 
 
 # Create a raster filled with NA
-values(spain_raster) <- NA
+terra::values(spain_raster) <- NA
 
 # Rasterize the vector with a buffer (sets cells touching the vector to 0)
 buffered_raster <- rasterize(spain_vector, spain_raster, field=1)  # Temporary raster with 1s

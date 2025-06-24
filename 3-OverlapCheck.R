@@ -19,8 +19,8 @@ interaction_df_spain <- interaction_df %>%
   filter(Predator_A %in% names_sps & Predator_B %in% names_sps)
 
 # Filter only interactions where both PREY exist in names_sps, in Spain.
-prey_df_spain <- prey_interaction_df %>%
-  filter(Prey_A %in% names_sps & Prey_B %in% names_sps)
+#prey_df_spain <- prey_interaction_df %>%
+ # filter(Prey_A %in% names_sps & Prey_B %in% names_sps)
 
 # Filter from the total list the species that are in Spain
 prey_count_spain<-prey_df %>% filter(Species %in% names_sps)
