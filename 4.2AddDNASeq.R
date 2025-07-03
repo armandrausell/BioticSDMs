@@ -4,7 +4,10 @@
 library(rentrez)
 library(stringr)
 library(dplyr)
-
+library(Biostrings)
+library(DECIPHER)
+library(phangorn)
+library(ape)
 #This script retrieves genetic data for a set of species, aligns the sequences and
 #computes a genetic distance matrix, which would be later used to check if competitive
 #exclusion is related to genetic distance
@@ -120,11 +123,37 @@ update_sequence <- function(df, species_name, raw_sequence, add_if_missing = FAL
 }
 
 #Fill the sequence to be included
-raw_seq<-""
+raw_seq<-"gtgtca cttattcgtt gattattttc aacaaaccac aaagacatcg gcaccctata
+     5281 cttattattt ggcgcctgag ccggtatagc cggcacagct cttagccttc tgatccgaac
+     5341 agagctaagt caacccggca cccttcttgg ggacgaccag gtatataacg tggttgtcac
+     5401 agctcatgct ttcgttataa ttttcttctt agttatacct gtaataattg gcgggtttgg
+     5461 gaactgactt gtcccattaa taattggtgc ccctgacata gcatttccac gaataaataa
+     5521 cataagcttt tgactccttc ccccatctct tcttctgctt ctatcttctt ctggaattga
+     5581 agctggtgcc gggaccggtt gaactgtcta ccccccccta gccggaaatc ttgcccacgc
+     5641 aggggcatca gtcgatctaa ctattttttc acttcactta gctggagttt cttcgatttt
+     5701 aggcgcaatt aattttatca ccacctgcat caacataaaa ccccccaaca taacacaata
+     5761 tcaaacccct ttatttgttt gatccgtctt gattacagcc gtattactat tgctctctct
+     5821 ccccgtacta gccgcaggca ttacaatgct actaacagac cgcaatctaa acacatcatt
+     5881 ttttgacccc gcgggagggg gagacccgat cctctaccaa cacttatttt gattctttgg
+     5941 gcaccctgaa gtctacattc ttatcctccc aggttttggc ataatttctc atattgttac
+     6001 atactatgca ggaaaaaaag aacccttcgg ctacatagga atagtctgag ccataatgtc
+     6061 aattgggttt ttaggcttca tcgtatgagc tcatcatata tttaccgtag gaatggatgt
+     6121 tgacacccgg gcctacttta catcagctac aataattatt gctattccca caggggtaaa
+     6181 agtctttagc tgacttgcaa ctcttcatgg cggaactatt aaatgagacg cagctatact
+     6241 ttgggctcta ggctttatct tcctgtttac tgttgggggt ctaacaggca ttattctagc
+     6301 caactcctca ttagatattg tccttcatga tacatattac gtagttgccc acttccacta
+     6361 tgttttgtcc ataggagctg tctttgccat tataggcgga tttgttcatt gattcccact
+     6421 ctttacgggt ttcaccctac atagctcatg aacaaaagct caatttggtg ttatattcac
+     6481 tggcgtcaat ataacattct ttcctcaaca cttcctgggt ttagctggca taccccgacg
+     6541 ctactctgac tacccagatg catatactct ttgaaactcc atttcatcga ttggctccct
+     6601 aatctcatta acagctgtaa ttataataat atttattatt tgagaagccc tagcagctaa
+     6661 acgcgaagta cttaccctcg aacttactag cactaatcta gagtgacttc acggctgccc
+     6721 acctccatac cacacctacg aagaagcaac ccatgtacaa acctcaaggg"
 
-df <- update_sequence(df, "Turdus_torquatus", raw_seq, add_if_missing = F)
+df <- update_sequence(df, "Lacerta_bilineata", raw_seq, add_if_missing = F)
 
 write.csv(df, "FilledDNASequences.csv", row.names = FALSE)
+df <- read.csv("FilledDNASequences.csv", stringsAsFactors = FALSE)
 
 df1<-df
 df1$sequence_clean <- gsub("-", "", df1$sequence)
@@ -140,3 +169,6 @@ dist_matrix <- dist.dna(aligned, model = "raw", pairwise.deletion = TRUE)
 
 c<-as.matrix(dist_matrix)
 
+aligned <- readDNAStringSet("sequences/coi_alignment_filled.fasta")
+tree_nj <- nj(dist_matrix)
+plot(tree_nj, main = "Neighbor-Joining Tree (ape)", cex = 0.5)
